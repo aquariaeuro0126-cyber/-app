@@ -1,0 +1,17 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# 環境変数・機密情報
+.env
+.env.*
+*.pem
+*.key
+*.secret
+
+# ログファイル
+*.log
+
+# サンプル画像フォルダ（アプリ動作に不要）
+品物カード/
