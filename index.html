@@ -274,6 +274,46 @@ var QRCode=function(t){"use strict";var r,e=function(){return"function"==typeof 
     }
     .shaking { animation: shake 0.5s ease; }
 
+    /* ===== 引き算モード ===== */
+    #modeBadge {
+      display: none;
+      background: #4a90d9;
+      color: white;
+      font-size: 0.75rem;
+      font-weight: bold;
+      padding: 3px 10px;
+      border-radius: 20px;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+    #modeBadge.sub { background: #e74c3c; }
+    .cartItemBase {
+      background: #fff3e0;
+      border-left: 4px solid #ff6b35 !important;
+      border-radius: 8px;
+      padding-left: 8px;
+    }
+    .cartItemBase .itemName::before {
+      content: '🔢 ';
+    }
+    .modeToggleBtn {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 20px;
+      border: 2px solid #ddd;
+      border-radius: 16px;
+      background: #f9f9f9;
+      cursor: pointer;
+      font-size: 1rem;
+      width: 100%;
+      text-align: left;
+    }
+    .modeToggleBtn.sub { border-color: #e74c3c; background: #fff5f5; }
+    .modeToggleLabel { font-weight: bold; color: #333; }
+    .modeToggleValue { font-size: 0.9rem; color: #888; }
+    .modeToggleValue.sub { color: #e74c3c; font-weight: bold; }
+
     /* ===== 先生モード ===== */
     #teacherMode { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
     .teacherCard {
@@ -457,7 +497,7 @@ var QRCode=function(t){"use strict";var r,e=function(){return"function"==typeof 
 <div id="studentScanScreen" class="screen active">
   <div class="appHeader">
     <button onclick="openPwModal()" title="せんせいモード" style="background:none;border:none;font-size:1.6rem;padding:4px 8px;cursor:pointer;line-height:1;">💡</button>
-    <h2>🛒 おかいもの</h2>
+    <h2>🛒 おかいもの<span id="modeBadge">ひき算</span></h2>
   </div>
   <div id="studentScan">
     <div class="scanArea">
@@ -531,6 +571,18 @@ var QRCode=function(t){"use strict";var r,e=function(){return"function"==typeof 
   <div id="teacherMode">
 
     <div class="teacherCard">
+      <h3>⚙️ けいさんモード</h3>
+      <button class="modeToggleBtn" id="modeToggleBtn" onclick="toggleCalcMode()">
+        <span class="modeToggleLabel">けいさんのしかた</span>
+        <span class="modeToggleValue" id="modeToggleValue">たし算モード（＋）</span>
+      </button>
+      <p style="font-size:0.82rem;color:#999;margin-top:8px;">
+        たし算：スキャンした金額をすべてたす（通常）<br>
+        ひき算：最初の商品から順番にひく（例: 100－30－20＝50）
+      </p>
+    </div>
+
+    <div class="teacherCard">
       <h3>📝 しょうひんじょうほう</h3>
       <div class="formRow">
         <label>しょうひんめい</label>
@@ -601,6 +653,7 @@ var QRCode=function(t){"use strict";var r,e=function(){return"function"==typeof 
 // =============================
 var cart        = [];
 var totalAmount = 0;
+var calcMode    = 'add'; // 'add'：たし算モード / 'sub'：ひき算モード
 // qrScanner は jsQR方式に移行したため廃止（後方互換のため変数だけ残す）
 var qrScanner   = null;
 var selectedEmoji = '🍎';
@@ -641,9 +694,12 @@ function showScreen(id) {
       if (cl) {
         var html = '';
         for (var j = 0; j < cart.length; j++) {
-          html += '<li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f0f0f0;font-size:1rem;">'
-            + '<span style="color:#333;font-weight:bold;">' + cart[j].name + '</span>'
-            + '<span style="color:#ff6b35;font-weight:bold;">' + cart[j].price + '円</span>'
+          var isBase = (calcMode === 'sub' && j === 0);
+          var prefix = (calcMode === 'sub' && j > 0) ? '－ ' : '';
+          html += '<li style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f0f0f0;font-size:1rem;'
+            + (isBase ? 'background:#fff3e0;border-radius:6px;padding-left:6px;border-left:3px solid #ff6b35;' : '') + '">'
+            + '<span style="color:#333;font-weight:bold;">' + (isBase ? '🔢 ' : '') + cart[j].name + '</span>'
+            + '<span style="color:#ff6b35;font-weight:bold;">' + prefix + cart[j].price + '円</span>'
             + '</li>';
         }
         cl.innerHTML = html;
@@ -653,6 +709,7 @@ function showScreen(id) {
       document.getElementById('payInput').value = '';
     }
     if (id === 'teacherModeScreen') {
+      updateModeUI();
       buildEmojiGrid();
       try { generateCard(); } catch(e) { console.warn('generateCard error:', e); }
     }
@@ -827,18 +884,64 @@ function onQRSuccess(text) {
 }
 
 // =============================
+// けいさんモード切り替え
+// =============================
+function toggleCalcMode() {
+  calcMode = (calcMode === 'add') ? 'sub' : 'add';
+  updateModeUI();
+  // カートに商品が入っている場合は合計を再計算
+  if (cart.length > 0) {
+    recalcTotal();
+    renderCart();
+  }
+}
+
+function updateModeUI() {
+  var badge      = document.getElementById('modeBadge');
+  var toggleBtn  = document.getElementById('modeToggleBtn');
+  var toggleVal  = document.getElementById('modeToggleValue');
+  if (calcMode === 'sub') {
+    badge.style.display = 'inline-block';
+    badge.className = 'sub';
+    if (toggleBtn)  toggleBtn.className  = 'modeToggleBtn sub';
+    if (toggleVal)  { toggleVal.textContent = 'ひき算モード（－）'; toggleVal.className = 'modeToggleValue sub'; }
+  } else {
+    badge.style.display = 'none';
+    badge.className = '';
+    if (toggleBtn)  toggleBtn.className  = 'modeToggleBtn';
+    if (toggleVal)  { toggleVal.textContent = 'たし算モード（＋）'; toggleVal.className = 'modeToggleValue'; }
+  }
+}
+
+function recalcTotal() {
+  if (cart.length === 0) { totalAmount = 0; return; }
+  if (calcMode === 'sub') {
+    // 最初の商品を基準値として、2番目以降を順番にひく
+    totalAmount = cart[0].price;
+    for (var i = 1; i < cart.length; i++) {
+      totalAmount -= cart[i].price;
+    }
+  } else {
+    totalAmount = 0;
+    for (var i = 0; i < cart.length; i++) {
+      totalAmount += cart[i].price;
+    }
+  }
+}
+
+// =============================
 // カート
 // =============================
 function addToCart(name, price) {
   cart.push({ name: name, price: price });
-  totalAmount += price;
+  recalcTotal();
   renderCart();
   showToast('✅ ' + name + ' を追加しました！');
 }
 
 function removeFromCart(idx) {
-  totalAmount -= cart[idx].price;
   cart.splice(idx, 1);
+  recalcTotal();
   renderCart();
 }
 
@@ -851,9 +954,10 @@ function renderCart() {
   } else {
     var html = '';
     for (var i = 0; i < cart.length; i++) {
-      html += '<li>'
+      var isBase = (calcMode === 'sub' && i === 0);
+      html += '<li' + (isBase ? ' class="cartItemBase"' : '') + '>'
         + '<span class="itemName">' + cart[i].name + '</span>'
-        + '<span class="itemPrice">' + cart[i].price + '円</span>'
+        + '<span class="itemPrice">' + (isBase ? '' : (calcMode === 'sub' ? '－' : '')) + cart[i].price + '円</span>'
         + '<button class="removeBtn" onclick="removeFromCart(' + i + ')">✕</button>'
         + '</li>';
     }
@@ -900,11 +1004,12 @@ function showResult(isCorrect) {
   var overlay = document.getElementById('resultOverlay');
   var confetti = document.getElementById('confettiContainer');
 
+  var modeLabel = (calcMode === 'sub') ? 'こたえ' : 'ごうけい';
   document.getElementById('resultEmoji').textContent = isCorrect ? '🎉' : '😢';
   document.getElementById('resultTitle').textContent = isCorrect ? 'せいかい！' : 'もういちど！';
   document.getElementById('resultSub').textContent   = isCorrect
-    ? 'ごうけいは ' + totalAmount + '円！ すごい！'
-    : 'ごうけいは ' + totalAmount + '円 だよ。\nもう一度かんがえてみよう！';
+    ? modeLabel + 'は ' + totalAmount + '円！ すごい！'
+    : modeLabel + 'は ' + totalAmount + '円 だよ。\nもう一度かんがえてみよう！';
   document.getElementById('resultNextBtn').textContent = isCorrect ? 'もう一度あそぶ' : 'もういちどやる';
   document.getElementById('resultNextBtn').onclick = function() {
     overlay.className = '';
